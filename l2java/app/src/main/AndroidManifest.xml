@@ -20,6 +20,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-    </application>
 
+    </application>
+    <queries>
+        <package android:name="com.example.l2" />
+    </queries>
 </manifest>
