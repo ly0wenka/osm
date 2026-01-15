@@ -1,8 +1,8 @@
 package com.example.l4;
 
 import android.os.Bundle;
+import android.widget.Button;
 import android.widget.TextView;
-import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.Condition;
@@ -12,83 +12,99 @@ import java.util.concurrent.locks.ReentrantLock;
 public class MainActivity extends AppCompatActivity {
 
     private TextView logTextView;
-
-    // Механізми синхронізації
-    private final Lock mutex = new ReentrantLock();
     private int sharedCounter = 0;
-    private final Semaphore semaphore = new Semaphore(2);
-    private final Lock conditionLock = new ReentrantLock();
-    private final Condition condition = conditionLock.newCondition();
     private boolean isReady = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
 
         logTextView = findViewById(R.id.logTextView);
 
-        runThreadsDemo();
+        findViewById(R.id.btnMutex).setOnClickListener(v -> runMutexTest());
+        findViewById(R.id.btnSemaphore).setOnClickListener(v -> runSemaphoreTest());
+        findViewById(R.id.btnCondition).setOnClickListener(v -> runConditionTest());
     }
 
-    // Метод для виводу тексту на екран з будь-якого потоку
     private void logToScreen(String message) {
-        runOnUiThread(() -> {
-            logTextView.append(message + "\n");
-        });
+        runOnUiThread(() -> logTextView.append(message + "\n"));
     }
 
-    private void runThreadsDemo() {
-        // --- MUTEX ---
+    // --- TEST 1: MUTEX ---
+    private void runMutexTest() {
+        logTextView.setText("--- ЗАПУСК MUTEX (По черзі) ---\n");
+        sharedCounter = 0;
+        final Lock mutex = new ReentrantLock();
+
         for (int i = 1; i <= 3; i++) {
             final int id = i;
             new Thread(() -> {
                 mutex.lock();
                 try {
                     sharedCounter++;
-                    logToScreen("🔒 Mutex: Потік " + id + " працює. Counter=" + sharedCounter);
-                    Thread.sleep(800);
+                    logToScreen("🔒 Потік " + id + " зайшов. Counter: " + sharedCounter);
+                    Thread.sleep(1000); // Потоки чекатимуть один одного
                 } catch (InterruptedException e) { e.printStackTrace(); }
-                finally { mutex.unlock(); }
+                finally {
+                    logToScreen("🔓 Потік " + id + " вийшов.");
+                    mutex.unlock();
+                }
             }).start();
         }
+    }
 
-        // --- SEMAPHORE (макс 2 одночасно) ---
-        for (int i = 1; i <= 4; i++) {
+    // --- TEST 2: SEMAPHORE ---
+    private void runSemaphoreTest() {
+        logTextView.setText("--- ЗАПУСК SEMAPHORE (Макс 2 одночасно) ---\n");
+        final Semaphore semaphore = new Semaphore(2);
+
+        for (int i = 1; i <= 5; i++) {
             final int id = i;
             new Thread(() -> {
                 try {
+                    logToScreen("👤 Потік " + id + " хоче увійти...");
                     semaphore.acquire();
-                    logToScreen("🚦 Semaphore: Потік " + id + " УВІЙШОВ");
-                    Thread.sleep(1500);
-                    logToScreen("🚦 Semaphore: Потік " + id + " ВИЙШОВ");
+                    logToScreen("🚦 [OK] Потік " + id + " ПРАЦЮЄ");
+                    Thread.sleep(2000);
+                    logToScreen("🚪 Потік " + id + " ЗВІЛЬНИВ місце");
                     semaphore.release();
                 } catch (InterruptedException e) { e.printStackTrace(); }
             }).start();
         }
+    }
 
-        // --- CONDITION VARIABLE ---
+    // --- TEST 3: CONDITION ---
+    private void runConditionTest() {
+        logTextView.setText("--- ЗАПУСК CONDITION (Очікування сигналу) ---\n");
+        isReady = false;
+        final Lock lock = new ReentrantLock();
+        final Condition condition = lock.newCondition();
+
+        // Потік-очікувач
         new Thread(() -> {
-            conditionLock.lock();
+            lock.lock();
             try {
-                logToScreen("⏳ Condition: Потік чекає на сигнал...");
+                logToScreen("⏳ Очікувач: Чекаю на команду 'Пуск'...");
                 while (!isReady) {
                     condition.await();
                 }
-                logToScreen("✅ Condition: СИГНАЛ ОТРИМАНО!");
+                logToScreen("🚀 Очікувач: СИГНАЛ ОТРИМАНО! Починаю роботу.");
             } catch (InterruptedException e) { e.printStackTrace(); }
-            finally { conditionLock.unlock(); }
+            finally { lock.unlock(); }
         }).start();
 
+        // Потік-сигналізатор
         new Thread(() -> {
-            try { Thread.sleep(4000); } catch (InterruptedException e) { e.printStackTrace(); }
-            conditionLock.lock();
             try {
-                isReady = true;
-                condition.signal();
-                logToScreen("🔔 Condition: Сигнал відправлено!");
-            } finally { conditionLock.unlock(); }
+                Thread.sleep(3000); // Затримка перед сигналом
+                lock.lock();
+                try {
+                    isReady = true;
+                    condition.signal();
+                    logToScreen("🔔 Сигналізатор: Натиснув кнопку 'Пуск'!");
+                } finally { lock.unlock(); }
+            } catch (InterruptedException e) { e.printStackTrace(); }
         }).start();
     }
 }
